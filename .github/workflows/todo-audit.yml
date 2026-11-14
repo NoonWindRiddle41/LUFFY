@@ -3,6 +3,7 @@ on:
   push:
     branches: [docs/update-todo-list]
     paths: ['.github/workflows/todo-audit.yml']
+  workflow_dispatch:
 jobs:
   audit:
     runs-on: ubuntu-latest
@@ -11,17 +12,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Fetch main and dev
-        run: |
-          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main dev:refs/remotes/origin/dev || git fetch origin main dev
       - name: Audit
         run: |
           python3 - <<'PY'
-          import os, re, subprocess, tarfile, io, tarfile
+          import os, re, subprocess, tarfile, io
           from collections import defaultdict
 
           def git(*a):
-              return subprocess.run(["git", *a], capture_output=True, text=True).stdout
+              r = subprocess.run(["git", *a], capture_output=True, text=True)
+              return r.stdout
 
           def show(ref, path):
               r = subprocess.run(["git", "show", f"{ref}:{path}"], capture_output=True, text=True)
@@ -50,15 +49,17 @@ jobs:
                           res[m.name].append((i, line.strip()[:200]))
               return res
 
+          print("REFS:", git("rev-parse", "origin/main").strip(), git("rev-parse", "origin/dev").strip())
           main_readme = show("origin/main", "README.md")
           dev_readme = show("origin/dev", "README.md")
           me = parse_readme(main_readme)
           de = parse_readme(dev_readme)
           print("MAIN README entries:", len(me), " DEV README entries:", len(de))
 
-          names = git("diff", "--name-only", "origin/main...origin/dev").split()
+          names = git("diff", "--name-only", "origin/main", "origin/dev").split()
           pyc = sorted(n for n in names if n.endswith(".py"))
-          print("CHANGED PY FILES main...dev:", pyc)
+          print("ALL CHANGED FILES main..dev:", names)
+          print("CHANGED PY FILES main..dev:", pyc)
 
           code_main = extract_code("origin/main")
           code_dev = extract_code("origin/dev")
@@ -121,6 +122,7 @@ jobs:
 
           other = sorted(f for f in code_dev if not f.startswith("luffy/"))
           print("DEV TODO-HAVING PY FILES OUTSIDE luffy/:", other)
+          print("TOTAL CODE TODO DEV:", sum(len(v) for v in code_dev.values()))
 
           ok = (not fail and not order_bad and dupes == 0 and title_count == 1
                 and changed_readme_paths == pyc and bm == bd and tm == td)
